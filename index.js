@@ -18,7 +18,7 @@ const API_SECRET = process.env.WA_API_SECRET || 'flicknest-wa-secret-2026';
 let sock;
 
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_session_v3');
+    const { state, saveCreds } = await useMultiFileAuthState('auth_session_v4');
 
     sock = makeWASocket({
         auth: state,
@@ -45,12 +45,23 @@ async function connectToWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
         
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+            const statusCode = (lastDisconnect.error)?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             console.log('Connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
-            if (shouldReconnect) {
+            
+            // Self-healing: if it's 401 (Unauthorized) or 408 (Timeout), delete the session folder and restart completely fresh
+            if (statusCode === 401 || statusCode === 408) {
+                console.log('Session is corrupted or timed out. Deleting session folder to self-heal...');
+                const fs = require('fs');
+                try {
+                    fs.rmSync('auth_session_v4', { recursive: true, force: true });
+                } catch (e) { }
+                console.log('Session deleted. Restarting...');
+                setTimeout(connectToWhatsApp, 2000);
+            } else if (shouldReconnect) {
                 connectToWhatsApp();
             } else {
-                console.log('You are logged out. Please delete the auth_info_baileys folder and restart to scan again.');
+                console.log('You are logged out.');
             }
         } else if (connection === 'open') {
             console.log('\n✅ WhatsApp Bot Connected Successfully!\n');
