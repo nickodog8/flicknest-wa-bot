@@ -18,13 +18,13 @@ const API_SECRET = process.env.WA_API_SECRET || 'flicknest-wa-secret-2026';
 let sock;
 
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_session_new');
+    const { state, saveCreds } = await useMultiFileAuthState('auth_session_v3');
 
     sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: 'silent' }), // Hide noisy logs
-        browser: ['FlickNest WA Bot', 'Chrome', '1.0.0']
+        browser: ['Ubuntu', 'Chrome', '20.0.04']
     });
 
     if (!sock.authState.creds.registered) {
