@@ -18,7 +18,7 @@ const API_SECRET = process.env.WA_API_SECRET || 'flicknest-wa-secret-2026';
 let sock;
 
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_session_v4');
+    const { state, saveCreds } = await useMultiFileAuthState('auth_session_v5');
 
     sock = makeWASocket({
         auth: state,
@@ -43,6 +43,14 @@ async function connectToWhatsApp() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
+        
+        if (qr) {
+            console.log('\n======================================================');
+            console.log('📱 OR SCAN THIS QR CODE IF PAIRING CODE FAILS:');
+            const qrImageUrl = `https://quickchart.io/qr?size=400&text=${encodeURIComponent(qr)}`;
+            console.log(qrImageUrl);
+            console.log('======================================================\n');
+        }
         
         if (connection === 'close') {
             const statusCode = (lastDisconnect.error)?.output?.statusCode;
