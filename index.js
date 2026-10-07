@@ -18,7 +18,7 @@ const API_SECRET = process.env.WA_API_SECRET || 'flicknest-wa-secret-2026';
 let sock;
 
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const { state, saveCreds } = await useMultiFileAuthState('auth_session_new');
 
     sock = makeWASocket({
         auth: state,
