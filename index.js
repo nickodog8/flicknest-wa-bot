@@ -22,7 +22,7 @@ async function connectToWhatsApp() {
 
     sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
+        printQRInTerminal: false,
         logger: pino({ level: 'silent' }), // Hide noisy logs
         browser: ['FlickNest WA Bot', 'Chrome', '1.0.0']
     });
@@ -34,6 +34,7 @@ async function connectToWhatsApp() {
             console.log('\n======================================================');
             console.log('🔗 SCAN THIS QR CODE WITH YOUR WHATSAPP TO LINK THE BOT');
             console.log('======================================================\n');
+            qrcode.generate(qr, { small: true });
         }
 
         if (connection === 'close') {
