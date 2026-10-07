@@ -18,7 +18,7 @@ const API_SECRET = process.env.WA_API_SECRET || 'flicknest-wa-secret-2026';
 let sock;
 
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_session_v5');
+    const { state, saveCreds } = await useMultiFileAuthState('auth_session_v6');
 
     sock = makeWASocket({
         auth: state,
@@ -27,20 +27,9 @@ async function connectToWhatsApp() {
         browser: ['Ubuntu', 'Chrome', '20.0.04']
     });
 
-    if (!sock.authState.creds.registered) {
-        const phoneNumber = '94740506038'; // Your bot number
-        setTimeout(async () => {
-            try {
-                const code = await sock.requestPairingCode(phoneNumber);
-                console.log('\n======================================================');
-                console.log(`🔗 ENTER THIS PAIRING CODE IN WHATSAPP: ${code}`);
-                console.log('======================================================\n');
-            } catch (err) {
-                console.log('Failed to request pairing code:', err);
-            }
-        }, 3000);
-    }
-
+    // WhatsApp rate-limits pairing codes quickly. We rely strictly on QR code now.
+    // Ensure the browser string is still valid.
+    
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
