@@ -35,7 +35,7 @@ async function connectToWhatsApp() {
             console.log('🔗 SCAN THIS QR CODE WITH YOUR WHATSAPP TO LINK THE BOT');
             console.log('======================================================\n');
             
-            const qrImageUrl = `https://chart.googleapis.com/chart?chs=400x400&cht=qr&chl=${encodeURIComponent(qr)}&choe=UTF-8`;
+            const qrImageUrl = `https://quickchart.io/qr?size=400&text=${encodeURIComponent(qr)}`;
             console.log('👉 CLICK THIS LINK TO VIEW YOUR QR CODE:');
             console.log(qrImageUrl);
             console.log('\n(Open the link in your browser and scan it with WhatsApp)\n');
