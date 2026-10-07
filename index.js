@@ -24,7 +24,8 @@ async function connectToWhatsApp() {
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: 'silent' }), // Hide noisy logs
-        browser: ['Ubuntu', 'Chrome', '20.0.04']
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
+        qrTimeout: 60000, // 1 minute timeout for QR
     });
 
     // WhatsApp rate-limits pairing codes quickly. We rely strictly on QR code now.
