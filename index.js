@@ -27,20 +27,23 @@ async function connectToWhatsApp() {
         browser: ['FlickNest WA Bot', 'Chrome', '1.0.0']
     });
 
+    if (!sock.authState.creds.registered) {
+        const phoneNumber = '94740506038'; // Your bot number
+        setTimeout(async () => {
+            try {
+                const code = await sock.requestPairingCode(phoneNumber);
+                console.log('\n======================================================');
+                console.log(`🔗 ENTER THIS PAIRING CODE IN WHATSAPP: ${code}`);
+                console.log('======================================================\n');
+            } catch (err) {
+                console.log('Failed to request pairing code:', err);
+            }
+        }, 3000);
+    }
+
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
-        if (qr) {
-            console.log('\n======================================================');
-            console.log('🔗 SCAN THIS QR CODE WITH YOUR WHATSAPP TO LINK THE BOT');
-            console.log('======================================================\n');
-            
-            const qrImageUrl = `https://quickchart.io/qr?size=400&text=${encodeURIComponent(qr)}`;
-            console.log('👉 CLICK THIS LINK TO VIEW YOUR QR CODE:');
-            console.log(qrImageUrl);
-            console.log('\n(Open the link in your browser and scan it with WhatsApp)\n');
-        }
-
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
