@@ -7,12 +7,12 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.5",
-    "axios": "^1.6.8",
-    "cors": "^2.8.5",
+    "@whiskeysockets/baileys": "^6.7.24",
+    "axios": "^1.20.0",
+    "cors": "^2.8.6",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "pino": "^8.20.0",
+    "express": "^4.22.3",
+    "pino": "^8.21.0",
     "qrcode-terminal": "^0.12.0"
   }
 }

@@ -46,13 +46,15 @@ app.get('/pair-main', async (req, res) => {
 
 // Endpoint for frontend to request a pairing code for a Pro user
 app.post('/pair', async (req, res) => {
-    const { email, phoneNumber, secret } = req.body;
+    const { email, phoneNumber, secret, type } = req.body; // type can be 'code' or 'qr'
     
     if (secret !== API_SECRET) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-    if (!email || !phoneNumber) {
-        return res.status(400).json({ success: false, error: 'Missing email or phone number' });
+    
+    // For pairing code, phone number is required
+    if (type !== 'qr' && !phoneNumber) {
+        return res.status(400).json({ success: false, error: 'Missing phone number for pairing code' });
     }
 
     try {
@@ -66,12 +68,15 @@ app.post('/pair', async (req, res) => {
             }
         }
 
-        // Start session and get pairing code
-        startSession(sessionId, phoneNumber, (code, err) => {
-            if (err) {
-                return res.status(500).json({ success: false, error: 'Failed to request pairing code' });
+        // Start session and get pairing code or QR
+        startSession(sessionId, { type: type || 'code', phoneNumber }, (result) => {
+            if (result.type === 'error') {
+                return res.status(500).json({ success: false, error: result.data || 'Failed to request code/QR' });
+            } else if (result.type === 'code') {
+                res.json({ success: true, method: 'code', code: result.data });
+            } else if (result.type === 'qr') {
+                res.json({ success: true, method: 'qr', qr: result.data });
             }
-            res.json({ success: true, code });
         });
 
     } catch (error) {
