@@ -3,6 +3,7 @@ const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const qrcode = require('qrcode-terminal');
 
 const API_SECRET = process.env.WA_API_SECRET || 'flicknest-wa-secret-2026';
 const sessions = new Map(); // Store active sockets
@@ -52,7 +53,6 @@ async function startSession(sessionId, options = {}, onResult = null) {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: sessionId === 'main', // Only print QR for main bot
         logger: pino({ level: 'silent' }),
         browser: ['Ubuntu', 'Chrome', '20.0.04'],
     });
@@ -83,10 +83,16 @@ async function startSession(sessionId, options = {}, onResult = null) {
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
-        if (qr && options.type === 'qr' && !sock.authState.creds.registered) {
-            if (onResult && !resultSent) {
-                resultSent = true;
-                onResult({ type: 'qr', data: qr });
+        if (qr) {
+            if (sessionId === 'main') {
+                console.log('\nScan this QR code with WhatsApp to connect the main bot:');
+                qrcode.generate(qr, { small: true });
+            }
+            if (options.type === 'qr' && !sock.authState.creds.registered) {
+                if (onResult && !resultSent) {
+                    resultSent = true;
+                    onResult({ type: 'qr', data: qr });
+                }
             }
         }
         
