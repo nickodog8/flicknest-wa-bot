@@ -30,7 +30,8 @@ app.get('/session-status', (req, res) => {
     const sessionId = email.replace(/[^a-zA-Z0-9]/g, '_');
     const sock = sessions.get(sessionId);
     const connected = !!(sock && sock.user);
-    res.json({ success: true, connected });
+    const phone = sock?.user?.id ? sock.user.id.split(':')[0].split('@')[0] : null;
+    res.json({ success: true, connected, phone });
 });
 
 // Endpoint for Admin to pair the MAIN bot using a code instead of QR

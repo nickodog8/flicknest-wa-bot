@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
@@ -54,7 +54,7 @@ async function startSession(sessionId, options = {}, onResult = null) {
     const sock = makeWASocket({
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
+        browser: Browsers.ubuntu('Chrome'),
     });
 
     sessions.set(sessionId, sock);
@@ -97,21 +97,16 @@ async function startSession(sessionId, options = {}, onResult = null) {
         }
         
         if (connection === 'close') {
-            const statusCode = (lastDisconnect.error)?.output?.statusCode;
+            const statusCode = (lastDisconnect?.error)?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            console.log(`[${sessionId}] Connection closed. Reconnecting: ${shouldReconnect}`);
+            console.log(`[${sessionId}] Connection closed (status: ${statusCode}). Reconnecting: ${shouldReconnect}`);
             
-            if (statusCode === 401 || statusCode === 408) {
-                console.log(`[${sessionId}] Session corrupted. Deleting...`);
+            if (statusCode === DisconnectReason.loggedOut) {
+                console.log(`[${sessionId}] Logged out. Deleting session files...`);
                 try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (e) { }
                 sessions.delete(sessionId);
-                if (sessionId === 'main') setTimeout(() => startSession('main'), 2000);
             } else if (shouldReconnect) {
-                startSession(sessionId);
-            } else {
-                console.log(`[${sessionId}] Logged out.`);
-                try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (e) { }
-                sessions.delete(sessionId);
+                setTimeout(() => startSession(sessionId, options), 3000);
             }
         } else if (connection === 'open') {
             console.log(`[${sessionId}] ✅ WhatsApp Bot Connected Successfully!`);
@@ -123,7 +118,11 @@ async function startSession(sessionId, options = {}, onResult = null) {
     // Listen for messages
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return;
+        if (!msg.message) return;
+
+        // For main bot, ignore messages sent from itself.
+        // For personal user linked bot sessions, allow messages even if fromMe is true (since user sends commands to their own number/device)
+        if (sessionId === 'main' && msg.key.fromMe) return;
 
         const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
         const jid = msg.key.remoteJid;
