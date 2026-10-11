@@ -19,6 +19,20 @@ app.get('/status', (req, res) => {
     });
 });
 
+app.get('/session-status', (req, res) => {
+    const { email, secret } = req.query;
+    if (secret !== API_SECRET) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    if (!email) {
+        return res.status(400).json({ success: false, error: 'Missing email' });
+    }
+    const sessionId = email.replace(/[^a-zA-Z0-9]/g, '_');
+    const sock = sessions.get(sessionId);
+    const connected = !!(sock && sock.user);
+    res.json({ success: true, connected });
+});
+
 // Endpoint for Admin to pair the MAIN bot using a code instead of QR
 app.get('/pair-main', async (req, res) => {
     const { phone } = req.query;
