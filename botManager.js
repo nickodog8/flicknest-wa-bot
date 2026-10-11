@@ -179,10 +179,27 @@ function loadExistingSessions() {
         }
     }
 
-    // Ensure main session exists
     if (!dirs.includes('session_main')) {
         startSession('main', { type: 'none' });
     }
 }
 
-module.exports = { startSession, loadExistingSessions, sessions };
+async function unlinkSession(sessionId) {
+    const sock = sessions.get(sessionId);
+    if (sock) {
+        try {
+            await sock.logout().catch(() => {});
+            sock.end(undefined);
+        } catch (e) {}
+        sessions.delete(sessionId);
+    }
+    const sessionDir = path.join(__dirname, `sessions`, `session_${sessionId}`);
+    try {
+        if (fs.existsSync(sessionDir)) {
+            fs.rmSync(sessionDir, { recursive: true, force: true });
+        }
+    } catch (e) {}
+    return true;
+}
+
+module.exports = { startSession, loadExistingSessions, sessions, unlinkSession };

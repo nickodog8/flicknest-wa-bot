@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { loadExistingSessions, startSession, sessions } = require('./botManager');
+const { loadExistingSessions, startSession, sessions, unlinkSession } = require('./botManager');
 
 const app = express();
 app.use(cors());
@@ -32,6 +32,24 @@ app.get('/session-status', (req, res) => {
     const connected = !!(sock && sock.user);
     const phone = sock?.user?.id ? sock.user.id.split(':')[0].split('@')[0] : null;
     res.json({ success: true, connected, phone });
+});
+
+// Endpoint to disconnect/unlink user session
+app.post('/unlink', async (req, res) => {
+    const { email, secret } = req.body;
+    if (secret !== API_SECRET) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    if (!email) {
+        return res.status(400).json({ success: false, error: 'Missing email' });
+    }
+    try {
+        const sessionId = email.replace(/[^a-zA-Z0-9]/g, '_');
+        await unlinkSession(sessionId);
+        res.json({ success: true, message: 'Session disconnected successfully' });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
 });
 
 // Endpoint for Admin to pair the MAIN bot using a code instead of QR
