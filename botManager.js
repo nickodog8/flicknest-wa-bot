@@ -56,7 +56,7 @@ async function processQueue(sessionId, sock) {
         const task = queue.shift();
         try {
             await sock.sendMessage(task.jid, { 
-                text: `Verified Pro Member. Downloading ${task.movieTitle} (${task.quality || '720p'})...\nPlease wait while the file is sent.` 
+                text: `Downloading ${task.movieTitle} (${task.quality || '720p'})...\nPlease wait while the file is sent.` 
             });
             
             const fileName = `${task.movieTitle.replace(/[^a-zA-Z0-9]/g, '_')}_${task.quality || '720p'}.mp4`;
@@ -164,10 +164,6 @@ async function startSession(sessionId, options = {}, onResult = null) {
         const jid = msg.key.remoteJid;
         if (!jid || jid === 'status@broadcast') return;
 
-        // For main bot, ignore messages sent from itself.
-        // For personal user linked bot sessions, allow fromMe so users can command from their own account.
-        if (sessionId === 'main' && msg.key.fromMe) return;
-
         const text = (
             msg.message.conversation ||
             msg.message.extendedTextMessage?.text ||
@@ -179,10 +175,62 @@ async function startSession(sessionId, options = {}, onResult = null) {
         if (!text) return;
 
         const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:3000';
+
+        // ═════════════════════════════════════════════════════════════
+        // 1. MAIN BOT NUMBER (Site's Number)
+        // Main bot ONLY delivers files when users visit the website
+        // and trigger GET-MOVIE-<code>.
+        // It does NOT respond to commands!
+        // ═════════════════════════════════════════════════════════════
+        if (sessionId === 'main') {
+            if (msg.key.fromMe) return; // Ignore messages from main bot itself
+
+            if (text.startsWith('GET-MOVIE-')) {
+                const code = text.split('-')[2];
+                console.log(`[main] Received website token [${code}] from ${jid}`);
+
+                try {
+                    await sock.sendMessage(jid, { text: 'Verifying your download token...' });
+
+                    const response = await axios.post(`${websiteUrl}/api/whatsapp/verify-token`, {
+                        code
+                    }, {
+                        headers: { 'x-api-secret': API_SECRET }
+                    });
+
+                    if (response.data.success) {
+                        const queue = getQueue(sessionId);
+                        queue.push({
+                            jid,
+                            downloadUrl: response.data.downloadUrl,
+                            movieTitle: response.data.movieTitle,
+                            quality: response.data.quality
+                        });
+                        
+                        if (queue.length > 1 || isProcessingQueue.get(sessionId)) {
+                            await sock.sendMessage(jid, { text: `You are in queue position #${queue.length}. File will be sent shortly.` });
+                        }
+                        processQueue(sessionId, sock);
+                    }
+                } catch (error) {
+                    const errorMsg = error.response?.data?.error || 'Failed to verify token.';
+                    await sock.sendMessage(jid, { text: errorMsg });
+                }
+            }
+            return; // Main bot exits here. No commands are handled by the main bot.
+        }
+
+        // ═════════════════════════════════════════════════════════════
+        // 2. USER'S OWN CONNECTED NUMBER (Personal / Group Bot Session)
+        // When a Pro user links their own WhatsApp number, THEIR OWN
+        // NUMBER acts as the bot in any group or direct chat they use.
+        // They get commands (.movie, .search, .dl, .status, .help)
+        // with UNLIMITED movie downloads!
+        // ═════════════════════════════════════════════════════════════
         const meta = sessionMeta.get(sessionId) || {};
         const userEmail = meta.email || null;
 
-        // 1. Direct website token download: GET-MOVIE-<code>
+        // Direct token download from site using personal number if clicked
         if (text.startsWith('GET-MOVIE-')) {
             const code = text.split('-')[2];
             console.log(`[${sessionId}] Received code [${code}] from ${jid}`);
@@ -217,11 +265,11 @@ async function startSession(sessionId, options = {}, onResult = null) {
             return;
         }
 
-        // 2. Search command: .movie <name> or .search <name> or /movie <name> or !movie <name>
+        // Search command: .movie <name> or .search <name> or /movie <name>
         const searchMatch = text.match(/^[./!]?(movie|search|film)\s+(.+)/i);
         if (searchMatch) {
             const query = searchMatch[2].trim();
-            console.log(`[${sessionId}] Search command for "${query}" from ${jid}`);
+            console.log(`[${sessionId}] User bot search for "${query}" in ${jid}`);
 
             try {
                 await sock.sendMessage(jid, { text: `Searching FlickNest for "${query}"...` });
@@ -253,7 +301,7 @@ async function startSession(sessionId, options = {}, onResult = null) {
                         responseText += `   Download: ${dlOptions.join('  or  ')}\n\n`;
                     });
 
-                    responseText += `Reply with *.dl <number> <quality>* to download.\nExample: *.dl 1 720p*\n\n_Note: Downloads are exclusive to FlickNest Pro members._`;
+                    responseText += `Reply with *.dl <number> <quality>* to download.\nExample: *.dl 1 720p*\n\n_Connected Bot: Unlimited Downloads Enabled_`;
                     await sock.sendMessage(jid, { text: responseText });
                 } else {
                     await sock.sendMessage(jid, { text: `No movies found matching "${query}". Please check the spelling and try again.` });
@@ -265,17 +313,17 @@ async function startSession(sessionId, options = {}, onResult = null) {
             return;
         }
 
-        // 3. Download command: .dl <number|movieId> [quality] or .download <number|movieId> [quality]
+        // Download command: .dl <number|movieId> [quality] or .download <number|movieId> [quality]
         const dlMatch = text.match(/^[./!]?(dl|download|get)\s+(\S+)(?:\s+(\S+))?/i);
         if (dlMatch) {
             const target = dlMatch[2].trim();
             const requestedQuality = (dlMatch[3] || '720p').trim().toLowerCase();
-            console.log(`[${sessionId}] Download request for "${target}" (${requestedQuality}) from ${jid}`);
+            console.log(`[${sessionId}] User bot download request for "${target}" (${requestedQuality}) in ${jid}`);
 
             let movieId = target;
             let movieTitle = '';
 
-            // Check if user specified a number corresponding to last search in this chat
+            // Check if user specified a number from last search
             const cachedList = searchCache.get(jid) || [];
             const index = parseInt(target, 10);
             if (!isNaN(index) && index >= 1 && index <= cachedList.length) {
@@ -285,7 +333,7 @@ async function startSession(sessionId, options = {}, onResult = null) {
             }
 
             try {
-                await sock.sendMessage(jid, { text: 'Verifying FlickNest Pro access...' });
+                await sock.sendMessage(jid, { text: 'Processing download request...' });
 
                 const dlRes = await axios.post(`${websiteUrl}/api/whatsapp/bot-command`, {
                     action: 'download',
@@ -305,9 +353,8 @@ async function startSession(sessionId, options = {}, onResult = null) {
                         quality: dlRes.data.quality || requestedQuality
                     });
 
-                    const remainingText = dlRes.data.remaining !== undefined ? ` (${dlRes.data.remaining} downloads remaining today)` : '';
                     if (queue.length > 1 || isProcessingQueue.get(sessionId)) {
-                        await sock.sendMessage(jid, { text: `Verified Pro Member! Queued at position #${queue.length}.${remainingText} File will be sent shortly.` });
+                        await sock.sendMessage(jid, { text: `Queued at position #${queue.length}. File will be sent shortly.` });
                     }
                     processQueue(sessionId, sock);
                 }
@@ -318,7 +365,7 @@ async function startSession(sessionId, options = {}, onResult = null) {
             return;
         }
 
-        // 4. Status command: .status or /status
+        // Status command: .status or /status
         if (text.match(/^[./!]?(status|plan|limit)$/i)) {
             try {
                 const stRes = await axios.post(`${websiteUrl}/api/whatsapp/bot-command`, {
@@ -330,11 +377,19 @@ async function startSession(sessionId, options = {}, onResult = null) {
 
                 if (stRes.data.success && stRes.data.isPro) {
                     await sock.sendMessage(jid, {
-                        text: `*FlickNest Account Status*\n\nPlan: Pro Plan (Active)\nDaily Downloads Used: ${stRes.data.requestsUsed} / ${stRes.data.dailyLimit}\nRemaining Downloads Today: ${stRes.data.remaining}\nBot Integration: Connected\n\nEnjoy direct movie downloads via WhatsApp groups and chats!`
+                        text: `*FlickNest Connected Bot Status*\n\n` +
+                              `Bot Number: Connected (Your Personal Number)\n` +
+                              `Account: ${userEmail || 'Active Pro'}\n` +
+                              `Plan: Pro Member\n` +
+                              `Bot Downloads: Unlimited\n` +
+                              `Status: Active\n\n` +
+                              `You can use .movie and .dl commands in direct chats and any groups you create!`
                     });
                 } else {
                     await sock.sendMessage(jid, {
-                        text: `*FlickNest Account Status*\n\nPlan: Free\nStatus: Pro subscription not active.\n\nTo use direct WhatsApp bot downloads in groups and chats, please subscribe to the Pro Plan at flicknest.site.`
+                        text: `*FlickNest Connected Bot Status*\n\n` +
+                              `Status: Pro subscription not active.\n\n` +
+                              `To use your personal number as a FlickNest bot with unlimited downloads, please subscribe to the Pro Plan at flicknest.site.`
                     });
                 }
             } catch (err) {
@@ -343,15 +398,15 @@ async function startSession(sessionId, options = {}, onResult = null) {
             return;
         }
 
-        // 5. Help command: .help or /help or !help
+        // Help command: .help or /help or !help
         if (text.match(/^[./!]?(help|menu|commands)$/i)) {
             await sock.sendMessage(jid, {
-                text: `*FlickNest WhatsApp Bot (Pro)*\n\n` +
+                text: `*FlickNest Personal WhatsApp Bot (Pro)*\n\n` +
                       `Use these commands in direct chat or in any group you create:\n\n` +
                       `• *.movie <title>* - Search movies (e.g. .movie Avatar)\n` +
                       `• *.search <title>* - Search movies\n` +
                       `• *.dl <number> <quality>* - Download movie (e.g. .dl 1 720p or .dl 1 1080p)\n` +
-                      `• *.status* - Check Pro status and remaining daily downloads\n` +
+                      `• *.status* - Check Pro status\n` +
                       `• *.help* - Show available commands\n\n` +
                       `_Powered by FlickNest (flicknest.site)_`
             });
@@ -365,7 +420,7 @@ async function startSession(sessionId, options = {}, onResult = null) {
 // Load all existing sessions on startup
 function loadExistingSessions() {
     const sessionsDir = path.join(__dirname, 'sessions');
-    if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
+    if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir);
 
     const dirs = fs.readdirSync(sessionsDir);
     for (const dir of dirs) {
