@@ -102,7 +102,7 @@ app.post('/pair', async (req, res) => {
         }
 
         // Start session and get pairing code or QR
-        startSession(sessionId, { type: type || 'code', phoneNumber }, (result) => {
+        startSession(sessionId, { type: type || 'code', phoneNumber, email }, (result) => {
             if (result.type === 'error') {
                 return res.status(500).json({ success: false, error: result.data || 'Failed to request code/QR' });
             } else if (result.type === 'code') {
