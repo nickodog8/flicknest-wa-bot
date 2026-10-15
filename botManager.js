@@ -179,13 +179,13 @@ async function startSession(sessionId, options = {}, onResult = null) {
 
         // ═════════════════════════════════════════════════════════════
         // 1. MAIN BOT NUMBER (Site's Number)
-        // Main bot ONLY handles website download tokens (GET-MOVIE-<code>).
+        // Main bot ONLY handles website download tokens (GET-MOVIE-<code> or GET-SEASON-<code>).
         // Main bot does NOT respond to commands!
         // ═════════════════════════════════════════════════════════════
         if (sessionId === 'main') {
             if (msg.key.fromMe) return; // Ignore messages from main bot itself
 
-            if (text.startsWith('GET-MOVIE-')) {
+            if (text.startsWith('GET-MOVIE-') || text.startsWith('GET-SEASON-')) {
                 const code = text.split('-')[2];
                 console.log(`[main] Received website token [${code}] from ${jid}`);
 
@@ -200,15 +200,29 @@ async function startSession(sessionId, options = {}, onResult = null) {
 
                     if (response.data.success) {
                         const queue = getQueue(sessionId);
-                        queue.push({
-                            jid,
-                            downloadUrl: response.data.downloadUrl,
-                            movieTitle: response.data.movieTitle,
-                            quality: response.data.quality
-                        });
+                        if (response.data.isSeasonBulk && Array.isArray(response.data.episodes)) {
+                            await sock.sendMessage(jid, {
+                                text: `Season Bulk Download verified! Queuing ${response.data.episodes.length} episodes for "${response.data.seriesTitle}" Season ${response.data.seasonNumber}...`
+                            });
+                            for (const ep of response.data.episodes) {
+                                queue.push({
+                                    jid,
+                                    downloadUrl: ep.downloadUrl,
+                                    movieTitle: `${response.data.seriesTitle} - ${ep.title}`,
+                                    quality: ep.quality || 'HD'
+                                });
+                            }
+                        } else {
+                            queue.push({
+                                jid,
+                                downloadUrl: response.data.downloadUrl,
+                                movieTitle: response.data.movieTitle,
+                                quality: response.data.quality
+                            });
+                        }
                         
                         if (queue.length > 1 || isProcessingQueue.get(sessionId)) {
-                            await sock.sendMessage(jid, { text: `You are in queue position #${queue.length}. File will be sent shortly.` });
+                            await sock.sendMessage(jid, { text: `You are in queue position #${queue.length}. File(s) will be sent shortly.` });
                         }
                         processQueue(sessionId, sock);
                     }
@@ -234,7 +248,7 @@ async function startSession(sessionId, options = {}, onResult = null) {
         const userEmail = meta.email || null;
 
         // Website token download if clicked
-        if (text.startsWith('GET-MOVIE-')) {
+        if (text.startsWith('GET-MOVIE-') || text.startsWith('GET-SEASON-')) {
             const code = text.split('-')[2];
             console.log(`[${sessionId}] Received code [${code}] from ${jid}`);
 
@@ -249,15 +263,29 @@ async function startSession(sessionId, options = {}, onResult = null) {
 
                 if (response.data.success) {
                     const queue = getQueue(sessionId);
-                    queue.push({
-                        jid,
-                        downloadUrl: response.data.downloadUrl,
-                        movieTitle: response.data.movieTitle,
-                        quality: response.data.quality
-                    });
+                    if (response.data.isSeasonBulk && Array.isArray(response.data.episodes)) {
+                        await sock.sendMessage(jid, {
+                            text: `Season Bulk Download verified! Queuing ${response.data.episodes.length} episodes for "${response.data.seriesTitle}" Season ${response.data.seasonNumber}...`
+                        });
+                        for (const ep of response.data.episodes) {
+                            queue.push({
+                                jid,
+                                downloadUrl: ep.downloadUrl,
+                                movieTitle: `${response.data.seriesTitle} - ${ep.title}`,
+                                quality: ep.quality || 'HD'
+                            });
+                        }
+                    } else {
+                        queue.push({
+                            jid,
+                            downloadUrl: response.data.downloadUrl,
+                            movieTitle: response.data.movieTitle,
+                            quality: response.data.quality
+                        });
+                    }
                     
                     if (queue.length > 1 || isProcessingQueue.get(sessionId)) {
-                        await sock.sendMessage(jid, { text: `You are in queue position #${queue.length}. File will be sent shortly.` });
+                        await sock.sendMessage(jid, { text: `You are in queue position #${queue.length}. File(s) will be sent shortly.` });
                     }
                     processQueue(sessionId, sock);
                 }
