@@ -167,6 +167,74 @@ async function startSession(sessionId, options = {}, onResult = null) {
             }
         } else if (connection === 'open') {
             console.log(`[${sessionId}] WhatsApp Bot Connected Successfully!`);
+
+            // Only send welcome message to personal connected numbers (not main bot)
+            if (sessionId !== 'main') {
+                const meta = sessionMeta.get(sessionId) || loadSessionMeta(sessionId) || {};
+                
+                if (!meta.welcomeSent) {
+                    setTimeout(async () => {
+                        try {
+                            const rawId = sock.user?.id || '';
+                            const userPhoneNumber = rawId.split(':')[0] || rawId.split('@')[0] || (meta.phoneNumber ? meta.phoneNumber.replace(/[^0-9]/g, '') : '');
+                            if (!userPhoneNumber) return;
+                            const targetJid = `${userPhoneNumber}@s.whatsapp.net`;
+
+                            const welcomeMessage = 
+`*🎬 FLICKNEST WHATSAPP BOT 🍿*
+
+🎉 *Welcome to FlickNest Cinema Bot!*
+ඔබගේ WhatsApp ගිණුම සාර්ථකව සම්බන්ධ විය. දැන් ඔබට ඔබගේ WhatsApp එකෙන්ම කෙලින්ම ඕනෑම Movie එකක් හෝ Series එකක් පහසුවෙන්ම ලබාගත හැක!
+
+━━━━━━━━━━━━━━━━━━━━━
+🍿 *MOVIES / SERIES ලබාගන්නා ආකාරය:*
+━━━━━━━━━━━━━━━━━━━━━
+1️⃣ *Direct Search (කෙලින්ම නම Type කරන්න):*
+   • කිසිදු code එකක් අවශ්‍ය නැත! කැමති Movie හෝ Series එකේ නම Message කරන්න.
+   • උදාහරණ: 
+     👉 *Avatar*
+     👉 *Spider Man*
+     👉 *Money Heist*
+
+2️⃣ *Quick Download (අංකය එවා Download කරගන්න):*
+   • Search results ලැබුණු පසු ඔබට අවශ්‍ය Movie එකෙහි අංකය Message කරන්න.
+   • 720p HD සඳහා: 👉 *1*
+   • 1080p Full HD සඳහා: 👉 *1 1080p*
+
+3️⃣ *TV Series Episodes:*
+   • Series එකක අංකය එවූ විට සියලු Episodes ලැයිස්තුව ලැබේ.
+   • කැමති Episode අංකය (උදා: *1* හෝ *2*) එවූ විට Episode එක කෙලින්ම Send වේ.
+
+━━━━━━━━━━━━━━━━━━━━━
+⚡ *AVAILABLE COMMANDS (විධාන ලැයිස්තුව):*
+━━━━━━━━━━━━━━━━━━━━━
+• 🔥 *.trending* ➔ දැනට වැඩිපුරම බලන Top Movies & Series
+• ✨ *.latest* ➔ අලුතින්ම Site එකට එකතු වූ අලුත්ම චිත්‍රපට
+• 📺 *.ep <number>* ➔ Series Episodes ලැයිස්තුව ලබාගැනීමට
+• ℹ️ *.info <number>* ➔ Synopsis, Cast, Rating සහ Runtime බැලීමට
+• 💎 *.status* ➔ ඔබගේ Pro Membership තත්ත්වය බැලීමට
+• ❓ *.help* ➔ මෙම උපදෙස් මාලාව නැවත ලබාගැනීමට
+
+━━━━━━━━━━━━━━━━━━━━━
+🔒 *100% PRIVATE & SECURE:*
+• මෙම Bot ක්‍රියාත්මක වන්නේ ඔබගේ පෞද්ගලික chat එක තුළ ඔබ යවන Messages වලට පමණි.
+• වෙනත් කිසිම කෙනෙකුට ඔබගේ bot එක ක්‍රියාත්මක කළ නොහැක.
+
+🍿 *Enjoy Your Movies with FlickNest!*
+🌐 _flicknest.site_`;
+
+                            await sock.sendMessage(targetJid, { text: welcomeMessage });
+                            console.log(`[${sessionId}] Sent one-time Welcome & Commands message to ${targetJid}`);
+                            
+                            // Mark welcomeSent so it is only sent ONCE!
+                            meta.welcomeSent = true;
+                            saveSessionMeta(sessionId, meta);
+                        } catch (err) {
+                            console.error(`[${sessionId}] Failed to send welcome message:`, err);
+                        }
+                    }, 2500);
+                }
+            }
         }
     });
 
@@ -747,20 +815,37 @@ async function startSession(sessionId, options = {}, onResult = null) {
 
         // ── 9. Command: .help / menu / hi / hello ──
         if (text.match(/^[./!]?(help|menu|commands|hi|hello|hey|start|bot)$/i)) {
-            await sock.sendMessage(jid, {
-                text: `*🎬 FLICKNEST WHATSAPP BOT 🍿*\n\n` +
-                      `👋 *Welcome to your Personal Cinema Bot!*\n\n` +
-                      `🚀 *How to use:* Super Easy & Fast (No complicated commands required!)\n\n` +
-                      `• 🔍 *Just type any Movie Name* (e.g. *Spider Man*, *Avatar*, *Batman*)\n` +
-                      `• 🔢 *Send the number* (e.g. *1* or *1 1080p*) to download immediately\n` +
-                      `• 🔥 *.trending* - View top trending titles\n` +
-                      `• ✨ *.latest* - View newly added releases\n` +
-                      `• 📺 *.ep <number>* - View TV Series episodes\n` +
-                      `• ℹ️ *.info <number>* - View synopsis, rating & cast\n` +
-                      `• 💎 *.status* - Check your Pro membership status\n\n` +
-                      `_🔒 Private & Secure: Only YOU can trigger this bot via your own chat._\n` +
-                      `_🌐 Powered by flicknest.site_`
-            });
+            const helpGuide = 
+`*🎬 FLICKNEST WHATSAPP BOT 🍿*
+
+🍿 *MOVIES / SERIES ලබාගන්නා ආකාරය:*
+━━━━━━━━━━━━━━━━━━━━━
+1️⃣ *Direct Search (කෙලින්ම නම Type කරන්න):*
+   • කැමති Movie හෝ Series එකේ නම Message කරන්න.
+   • උදා: *Avatar*, *Spider Man*, *Money Heist*
+
+2️⃣ *Quick Download (අංකය එවා Download කරගන්න):*
+   • Search results ලැබුණු පසු අවශ්‍ය Movie එකෙහි අංකය එවන්න.
+   • 720p HD: 👉 *1*
+   • 1080p Full HD: 👉 *1 1080p*
+
+3️⃣ *TV Series Episodes:*
+   • Series එකක අංකය එවූ පසු Episode අංකය (උදා: *1*) එවන්න.
+
+━━━━━━━━━━━━━━━━━━━━━
+⚡ *AVAILABLE COMMANDS (විධාන ලැයිස්තුව):*
+━━━━━━━━━━━━━━━━━━━━━
+• 🔥 *.trending* ➔ Top Trending Movies & Series
+• ✨ *.latest* ➔ අලුතින්ම එකතු වූ අලුත්ම චිත්‍රපට
+• 📺 *.ep <number>* ➔ Series Episodes බැලීමට
+• ℹ️ *.info <number>* ➔ Synopsis, Cast, Rating බැලීමට
+• 💎 *.status* ➔ ඔබගේ Pro Membership තත්ත්වය බැලීමට
+• ❓ *.help* ➔ මෙම උපදෙස් මාලාව නැවත ලබාගැනීමට
+
+🔒 _Private & Secure: Only YOU can trigger this bot via your own chat._
+🌐 _flicknest.site_`;
+
+            await sock.sendMessage(jid, { text: helpGuide });
             try {
                 await sock.sendMessage(jid, { react: { text: '🍿', key: msg.key } });
             } catch (e) {}
