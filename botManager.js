@@ -13,6 +13,28 @@ const sessionMeta = new Map(); // Store { email, phoneNumber } per session
 const searchCache = new Map(); // Store last search results per chat JID
 const episodeCache = new Map(); // Store last viewed series episodes per chat JID
 
+// In-memory message store for E2EE decryption retry handling (resolves "Waiting for this message")
+const messageStore = new Map();
+function saveMsgToStore(msg) {
+    if (msg?.key?.id && msg?.message) {
+        messageStore.set(msg.key.id, msg.message);
+        if (messageStore.size > 2000) {
+            const firstKey = messageStore.keys().next().value;
+            messageStore.delete(firstKey);
+        }
+    }
+}
+
+// In-memory retry counter cache for Baileys multi-device E2EE
+const retryCounterMap = new Map();
+const msgRetryCounterCache = {
+    get: (key) => retryCounterMap.get(key),
+    set: (key, val) => retryCounterMap.set(key, val),
+    del: (key) => retryCounterMap.delete(key),
+    delete: (key) => retryCounterMap.delete(key),
+    flushAll: () => retryCounterMap.clear(),
+};
+
 // Save session metadata to disk
 function saveSessionMeta(sessionId, meta) {
     if (!meta) return;
@@ -111,7 +133,25 @@ async function startSession(sessionId, options = {}, onResult = null) {
         auth: state,
         logger: pino({ level: 'silent' }),
         browser: Browsers.ubuntu('Chrome'),
+        syncFullHistory: false,
+        msgRetryCounterCache,
+        getMessage: async (key) => {
+            if (key?.id && messageStore.has(key.id)) {
+                return messageStore.get(key.id);
+            }
+            return undefined;
+        }
     });
+
+    // Automatically store all sent messages for E2EE decryption retry requests
+    const originalSendMessage = sock.sendMessage.bind(sock);
+    sock.sendMessage = async (targetJid, content, sendOptions = {}) => {
+        const sent = await originalSendMessage(targetJid, content, sendOptions);
+        if (sent) {
+            saveMsgToStore(sent);
+        }
+        return sent;
+    };
 
     sessions.set(sessionId, sock);
     let resultSent = false;
@@ -242,6 +282,10 @@ async function startSession(sessionId, options = {}, onResult = null) {
 
     // Listen for incoming messages
     sock.ev.on('messages.upsert', async (m) => {
+        for (const item of (m.messages || [])) {
+            saveMsgToStore(item);
+        }
+
         const msg = m.messages[0];
         if (!msg || !msg.message) return;
 
