@@ -245,20 +245,29 @@ async function startSession(sessionId, options = {}, onResult = null) {
         const msg = m.messages[0];
         if (!msg || !msg.message) return;
 
-        const jid = msg.key.remoteJid;
+        let jid = msg.key.remoteJid;
         if (!jid || jid === 'status@broadcast') return;
 
+        // Un-wrap any ephemeral, view-once, or edited wrappers
+        const innerMsg = 
+            msg.message?.ephemeralMessage?.message ||
+            msg.message?.viewOnceMessage?.message ||
+            msg.message?.viewOnceMessageV2?.message ||
+            msg.message?.documentWithCaptionMessage?.message ||
+            msg.message?.editedMessage?.message?.protocolMessage?.editedMessage ||
+            msg.message;
+
         const text = (
-            msg.message.conversation ||
-            msg.message.extendedTextMessage?.text ||
-            msg.message.imageMessage?.caption ||
-            msg.message.videoMessage?.caption ||
+            innerMsg?.conversation ||
+            innerMsg?.extendedTextMessage?.text ||
+            innerMsg?.imageMessage?.caption ||
+            innerMsg?.videoMessage?.caption ||
             ''
         ).trim();
 
         if (!text) return;
 
-        const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:3000';
+        const websiteUrl = process.env.WEBSITE_URL || 'https://flicknest.site';
 
         // ═════════════════════════════════════════════════════════════
         // 1. MAIN BOT NUMBER (Site's Number)
@@ -319,18 +328,53 @@ async function startSession(sessionId, options = {}, onResult = null) {
 
         // ═════════════════════════════════════════════════════════════
         // 2. USER'S OWN CONNECTED NUMBER (Personal Bot Session)
-        // STRICT PRIVACY RULE:
-        // Bot ONLY works when the user messages THEMSELVES from their own connected number!
-        // If any other person messages this number, or user messages someone else, bot does NOT respond.
+        // STRICT PRIVACY & OWNER-ONLY ACCESS:
+        // Bot ONLY responds to the user who connected this bot!
+        // Handles both Self-Chat (Message Yourself) and Direct WhatsApp interaction.
         // ═════════════════════════════════════════════════════════════
-        const myNumber = sock.user?.id ? sock.user.id.split(':')[0].split('@')[0].replace(/\D/g, '') : null;
-        const remoteNumber = jid.split('@')[0].split(':')[0].replace(/\D/g, '');
+        const meta = sessionMeta.get(sessionId) || loadSessionMeta(sessionId) || {};
+        const cleanMetaPhone = meta.phoneNumber ? meta.phoneNumber.replace(/\D/g, '') : null;
+        const cleanUserPhone = sock.user?.id ? sock.user.id.split(':')[0].split('@')[0].replace(/\D/g, '') : null;
+        const botOwnerPhone = cleanUserPhone || cleanMetaPhone;
 
-        // Must be sent from the user (fromMe) AND to the user's own number (remoteNumber === myNumber)
-        const isSelfMessage = msg.key.fromMe && (myNumber && remoteNumber === myNumber);
-        if (!isSelfMessage) {
-            return;
+        const isGroup = jid.endsWith('@g.us') || jid.endsWith('@broadcast') || jid.endsWith('@newsletter');
+        if (isGroup) return; // Never respond to groups or channels
+
+        const remoteNumber = jid.split('@')[0].split(':')[0].replace(/\D/g, '');
+        const senderPhone = (msg.key.participant || jid).split('@')[0].split(':')[0].replace(/\D/g, '');
+        const myLid = (sock.user?.lid || sock.authState?.creds?.me?.lid || '').split(':')[0].split('@')[0];
+
+        let isAuthorized = false;
+
+        if (msg.key.fromMe) {
+            // Sent by this account in self-chat ("Message yourself" or self LID)
+            if (botOwnerPhone && remoteNumber === botOwnerPhone) {
+                isAuthorized = true;
+            } else if (myLid && remoteNumber === myLid) {
+                isAuthorized = true;
+            } else if (jid.endsWith('@lid')) {
+                // Self chat often presents as an internal LID when fromMe is true
+                isAuthorized = true;
+            } else if (botOwnerPhone && jid.includes(botOwnerPhone)) {
+                isAuthorized = true;
+            }
+        } else {
+            // Sent TO this account. Only authorize if the sender is the registered owner!
+            if (botOwnerPhone && senderPhone === botOwnerPhone) {
+                isAuthorized = true;
+            }
         }
+
+        if (!isAuthorized) {
+            return; // Silently ignore other people/strangers
+        }
+
+        // Ensure jid is a direct WhatsApp phone number JID (resolves internal @lid issues)
+        if (jid.endsWith('@lid') && botOwnerPhone) {
+            jid = `${botOwnerPhone}@s.whatsapp.net`;
+        }
+
+        console.log(`[${sessionId}] 🎯 Processing authorized command: "${text}" on ${jid}`);
 
         // Auto-React to incoming self-message with ⏳
         try {
@@ -339,7 +383,6 @@ async function startSession(sessionId, options = {}, onResult = null) {
             });
         } catch (e) {}
 
-        const meta = sessionMeta.get(sessionId) || {};
         const userEmail = meta.email || null;
 
         // ── 1. Website Token Download (when user clicks "WhatsApp" on flicknest.site) ──
