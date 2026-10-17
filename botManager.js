@@ -13,15 +13,53 @@ const sessionMeta = new Map(); // Store { email, phoneNumber } per session
 const searchCache = new Map(); // Store last search results per chat JID
 const episodeCache = new Map(); // Store last viewed series episodes per chat JID
 
-// In-memory message store for E2EE decryption retry handling (resolves "Waiting for this message")
+// In-memory & disk-backed message store for E2EE decryption retry handling (resolves "Waiting for this message")
 const messageStore = new Map();
+const botSentMessageIds = new Set();
+const msgStoreFile = path.join(__dirname, 'sessions', 'msg_store.json');
+
+function loadMsgStoreFromDisk() {
+    try {
+        if (fs.existsSync(msgStoreFile)) {
+            const raw = fs.readFileSync(msgStoreFile, 'utf8');
+            const data = JSON.parse(raw);
+            if (Array.isArray(data)) {
+                for (const [id, msg] of data) {
+                    messageStore.set(id, msg);
+                }
+            }
+            console.log(`[Store] Loaded ${messageStore.size} cached E2EE messages from disk.`);
+        }
+    } catch (e) {
+        console.error('[Store] Failed to load msg_store.json:', e.message);
+    }
+}
+loadMsgStoreFromDisk();
+
+let saveMsgStoreTimeout = null;
+function scheduleSaveMsgStore() {
+    if (saveMsgStoreTimeout) return;
+    saveMsgStoreTimeout = setTimeout(() => {
+        saveMsgStoreTimeout = null;
+        try {
+            const sessionsDir = path.join(__dirname, 'sessions');
+            if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
+            const entries = Array.from(messageStore.entries()).slice(-1500);
+            fs.writeFileSync(msgStoreFile, JSON.stringify(entries), 'utf8');
+        } catch (e) {
+            console.error('[Store] Failed to save msg_store.json:', e.message);
+        }
+    }, 4000);
+}
+
 function saveMsgToStore(msg) {
     if (msg?.key?.id && msg?.message) {
         messageStore.set(msg.key.id, msg.message);
-        if (messageStore.size > 2000) {
+        if (messageStore.size > 2500) {
             const firstKey = messageStore.keys().next().value;
             messageStore.delete(firstKey);
         }
+        scheduleSaveMsgStore();
     }
 }
 
@@ -143,11 +181,18 @@ async function startSession(sessionId, options = {}, onResult = null) {
         }
     });
 
-    // Automatically store all sent messages for E2EE decryption retry requests
+    // Automatically store all sent messages for E2EE decryption retry requests & track bot-sent IDs
     const originalSendMessage = sock.sendMessage.bind(sock);
     sock.sendMessage = async (targetJid, content, sendOptions = {}) => {
         const sent = await originalSendMessage(targetJid, content, sendOptions);
         if (sent) {
+            if (sent?.key?.id) {
+                botSentMessageIds.add(sent.key.id);
+                if (botSentMessageIds.size > 4000) {
+                    const first = botSentMessageIds.values().next().value;
+                    botSentMessageIds.delete(first);
+                }
+            }
             saveMsgToStore(sent);
         }
         return sent;
@@ -289,6 +334,9 @@ async function startSession(sessionId, options = {}, onResult = null) {
         const msg = m.messages[0];
         if (!msg || !msg.message) return;
 
+        // CRITICAL: Ignore messages sent by our bot process itself (prevents infinite echo loops in self-chats)
+        if (msg.key?.id && botSentMessageIds.has(msg.key.id)) return;
+
         let jid = msg.key.remoteJid;
         if (!jid || jid === 'status@broadcast') return;
 
@@ -310,6 +358,9 @@ async function startSession(sessionId, options = {}, onResult = null) {
         ).trim();
 
         if (!text) return;
+
+        // CRITICAL: Ignore bot self-generated text messages to prevent any runaway loops
+        if (text.includes('FLICKNEST WHATSAPP BOT') || text.includes('FLICKNEST CINEMA BOT')) return;
 
         const websiteUrl = process.env.WEBSITE_URL || 'https://flicknest.site';
 
